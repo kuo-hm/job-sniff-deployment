@@ -1,0 +1,141 @@
+version: "3.8"
+
+services:
+  rabbitmq:
+    image: rabbitmq:3-management
+    ports:
+      - "5672:5672"    # AMQP
+      - "15672:15672"  # Management UI
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS}
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    networks:
+      - job-sniff-net
+
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - job-sniff-net
+
+  api-gateway:
+    image: dockerhub-username/job-sniff-api-gateway:latest
+    env_file:
+      - ./.env
+    depends_on:
+      - rabbitmq
+      - postgres
+    networks:
+      - job-sniff-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    ports:
+      - "3000:3000"
+
+  user-service:
+    image: dockerhub-username/job-sniff-user-service:latest
+    env_file:
+      - ./.env
+    depends_on:
+      - postgres
+    networks:
+      - job-sniff-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    ports:
+      - "4000:4000"
+
+  job-sniff-scrapers:
+    image: dockerhub-username/job-sniff-scrapers:latest
+    env_file:
+      - ./.env
+    depends_on:
+      - rabbitmq
+      - postgres
+      - result-service
+    networks:
+      - job-sniff-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    ports:
+      - "5000:5000"
+
+  result-service:
+    image: dockerhub-username/job-sniff-result-service:latest
+    env_file:
+      - ./.env
+    depends_on:
+      - postgres
+    networks:
+      - job-sniff-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    ports:
+      - "6000:6000"
+
+  notification-service:
+    image: dockerhub-username/job-sniff-notification-service:latest
+    env_file:
+      - ./.env
+    depends_on:
+      - rabbitmq
+    networks:
+      - job-sniff-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    ports:
+      - "7000:7000"
+
+  job-scheduler:
+    image: dockerhub-username/job-sniff-job-scheduler:latest
+    env_file:
+      - ./.env
+    depends_on:
+      - scraper-manager
+    networks:
+      - job-sniff-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    ports:
+      - "8000:8000"
+
+volumes:
+  rabbitmq-data:
+  postgres-data:
+
+networks:
+  job-sniff-net:
+    driver: bridge
